@@ -1,0 +1,466 @@
+{
+  "name": "Cotton Trading Email Processing",
+  "nodes": [
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"emailSubject\": \"{{ $json.subject }}\",\n  \"senderEmail\": \"{{ $json.from }}\",\n  \"receivedAt\": \"{{ $json.date }}\",\n  \"attachments\": {{ $json.attachments }}\n}",
+        "options": {}
+      },
+      "id": "email-trigger",
+      "name": "Email Trigger",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "credentials": {
+        "imap": {
+          "id": "email-credentials",
+          "name": "Government Email IMAP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "{{ $json.emailSubject }}",
+              "operation": "equal",
+              "value2": "Sale Confirmation of FP Bales"
+            }
+          ]
+        }
+      },
+      "id": "subject-filter",
+      "name": "Subject Filter",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.attachments && $json.attachments.length > 0 && $json.attachments.some(att => att.contentType === 'application/pdf') }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "pdf-check",
+      "name": "PDF Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract PDF attachment and prepare for S3 upload\nconst attachments = $input.first().json.attachments || [];\nconst pdfAttachment = attachments.find(att => att.contentType === 'application/pdf');\n\nif (!pdfAttachment) {\n  throw new Error('No PDF attachment found');\n}\n\nconst date = new Date();\nconst year = date.getFullYear();\nconst month = String(date.getMonth() + 1).padStart(2, '0');\nconst day = String(date.getDate()).padStart(2, '0');\n\n// Generate filename: Year_Name_Date_Allocation_A\nconst fileName = `${year}_Cotton_Sale_${day}${month}_Allocation_A.pdf`;\nconst backupFileName = `Riddhi_Siddhi_File_${day}${month}.pdf`;\n\nreturn {\n  pdfData: pdfAttachment.content,\n  fileName: fileName,\n  backupFileName: backupFileName,\n  originalName: pdfAttachment.filename,\n  contentType: pdfAttachment.contentType\n};"
+      },
+      "id": "pdf-processor",
+      "name": "PDF Processor",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [900, 120]
+    },
+    {
+      "parameters": {
+        "authentication": "accessKey",
+        "resource": "file",
+        "operation": "upload",
+        "bucketName": "={{ $env.AWS_S3_BUCKET }}",
+        "fileName": "={{ $json.fileName }}",
+        "isBinaryData": true,
+        "binaryDataContent": "={{ $json.pdfData }}",
+        "additionalFields": {
+          "contentType": "application/pdf",
+          "serverSideEncryption": "AES256"
+        }
+      },
+      "id": "s3-upload",
+      "name": "S3 Upload",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 1,
+      "position": [1120, 120],
+      "credentials": {
+        "aws": {
+          "id": "aws-credentials",
+          "name": "AWS S3 Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL }}/api/webhook/email-received",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "subject",
+              "value": "={{ $node['Email Trigger'].json.emailSubject }}"
+            },
+            {
+              "name": "sender",
+              "value": "={{ $node['Email Trigger'].json.senderEmail }}"
+            },
+            {
+              "name": "receivedAt",
+              "value": "={{ $node['Email Trigger'].json.receivedAt }}"
+            },
+            {
+              "name": "hasPdf",
+              "value": true
+            },
+            {
+              "name": "pdfFilename",
+              "value": "={{ $json.fileName }}"
+            },
+            {
+              "name": "pdfS3Url",
+              "value": "={{ $json.Location }}"
+            }
+          ]
+        }
+      },
+      "id": "webhook-notify",
+      "name": "Webhook Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 120]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.AI_OCR_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.AI_OCR_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "document_url",
+              "value": "={{ $node['S3 Upload'].json.Location }}"
+            },
+            {
+              "name": "extraction_type",
+              "value": "cotton_trading_data"
+            },
+            {
+              "name": "fields",
+              "value": "[\n  \"indent_number\",\n  \"buyer_type\",\n  \"buyer_name\",\n  \"center_name\",\n  \"branch\",\n  \"date_of_allocation\",\n  \"firm_name\",\n  \"variety\",\n  \"bales_quantity\",\n  \"crop_year\",\n  \"offer_price\",\n  \"bid_price\",\n  \"lifting_period\",\n  \"fibre_length\",\n  \"cotton_fibre_specification\",\n  \"ccl_discount\"\n]"
+            }
+          ]
+        }
+      },
+      "id": "ai-ocr",
+      "name": "AI OCR Processing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1560, 120]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process OCR results and determine confidence\nconst ocrResult = $input.first().json;\n\nif (!ocrResult.success) {\n  return {\n    parseSuccess: false,\n    parsingConfidence: 0,\n    extractedData: null,\n    error: ocrResult.error || 'OCR processing failed'\n  };\n}\n\nconst extractedData = ocrResult.data;\nconst confidence = ocrResult.confidence || 0;\n\n// Validate required fields\nconst requiredFields = [\n  'indent_number', 'buyer_name', 'firm_name', 'variety', \n  'bales_quantity', 'offer_price', 'bid_price'\n];\n\nconst missingFields = requiredFields.filter(field => !extractedData[field]);\n\nif (missingFields.length > 0) {\n  return {\n    parseSuccess: false,\n    parsingConfidence: Math.max(0, confidence - (missingFields.length * 10)),\n    extractedData: extractedData,\n    error: `Missing required fields: ${missingFields.join(', ')}`\n  };\n}\n\n// Clean and format the data\nconst cleanedData = {\n  indent_number: String(extractedData.indent_number || '').trim(),\n  buyer_type: String(extractedData.buyer_type || 'Unknown').trim(),\n  buyer_name: String(extractedData.buyer_name || '').trim(),\n  center_name: String(extractedData.center_name || '').trim(),\n  branch: String(extractedData.branch || '').trim(),\n  date_of_allocation: String(extractedData.date_of_allocation || '').trim(),\n  firm_name: String(extractedData.firm_name || '').trim(),\n  variety: String(extractedData.variety || '').trim(),\n  bales_quantity: parseInt(extractedData.bales_quantity) || 0,\n  crop_year: String(extractedData.crop_year || '').trim(),\n  offer_price: parseFloat(extractedData.offer_price) || 0,\n  bid_price: parseFloat(extractedData.bid_price) || 0,\n  lifting_period: String(extractedData.lifting_period || '').trim(),\n  fibre_length: String(extractedData.fibre_length || '').trim(),\n  cotton_fibre_specification: String(extractedData.cotton_fibre_specification || '').trim(),\n  ccl_discount: parseFloat(extractedData.ccl_discount) || 0\n};\n\nreturn {\n  parseSuccess: true,\n  parsingConfidence: confidence,\n  extractedData: cleanedData,\n  emailLogId: $node['Webhook Notify'].json.emailLogId\n};"
+      },
+      "id": "data-processor",
+      "name": "Data Processor",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1780, 120]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.parsingConfidence }}",
+              "operation": "larger",
+              "value2": 80
+            }
+          ]
+        }
+      },
+      "id": "confidence-check",
+      "name": "Confidence Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2000, 120]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL }}/api/webhook/pdf-parsed",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "emailLogId",
+              "value": "={{ $json.emailLogId }}"
+            },
+            {
+              "name": "parsingConfidence",
+              "value": "={{ $json.parsingConfidence }}"
+            },
+            {
+              "name": "extractedData",
+              "value": "={{ JSON.stringify($json.extractedData) }}"
+            },
+            {
+              "name": "parseSuccess",
+              "value": "={{ $json.parseSuccess }}"
+            }
+          ]
+        }
+      },
+      "id": "final-webhook",
+      "name": "Final Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2220, 80]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.ADMIN_NOTIFICATION_WEBHOOK }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "type",
+              "value": "low_confidence_parsing"
+            },
+            {
+              "name": "emailLogId",
+              "value": "={{ $json.emailLogId }}"
+            },
+            {
+              "name": "confidence",
+              "value": "={{ $json.parsingConfidence }}"
+            },
+            {
+              "name": "message",
+              "value": "Cotton trading data requires manual review due to low parsing confidence"
+            }
+          ]
+        }
+      },
+      "id": "admin-notification",
+      "name": "Admin Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2220, 180]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL }}/api/webhook/email-received",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "subject",
+              "value": "={{ $node['Email Trigger'].json.emailSubject }}"
+            },
+            {
+              "name": "sender",
+              "value": "={{ $node['Email Trigger'].json.senderEmail }}"
+            },
+            {
+              "name": "receivedAt",
+              "value": "={{ $node['Email Trigger'].json.receivedAt }}"
+            },
+            {
+              "name": "hasPdf",
+              "value": false
+            }
+          ]
+        }
+      },
+      "id": "no-pdf-webhook",
+      "name": "No PDF Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 280]
+    }
+  ],
+  "connections": {
+    "Email Trigger": {
+      "main": [
+        [
+          {
+            "node": "Subject Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Subject Filter": {
+      "main": [
+        [
+          {
+            "node": "PDF Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PDF Check": {
+      "main": [
+        [
+          {
+            "node": "PDF Processor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No PDF Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PDF Processor": {
+      "main": [
+        [
+          {
+            "node": "S3 Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S3 Upload": {
+      "main": [
+        [
+          {
+            "node": "Webhook Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Notify": {
+      "main": [
+        [
+          {
+            "node": "AI OCR Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI OCR Processing": {
+      "main": [
+        [
+          {
+            "node": "Data Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Processor": {
+      "main": [
+        [
+          {
+            "node": "Confidence Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confidence Check": {
+      "main": [
+        [
+          {
+            "node": "Final Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Admin Notification",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Final Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "cotton-trading",
+      "name": "cotton-trading"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

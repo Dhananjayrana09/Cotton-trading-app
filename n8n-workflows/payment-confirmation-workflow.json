@@ -1,0 +1,411 @@
+{
+  "name": "Payment Confirmation Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "payment-confirmation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "payment-webhook",
+      "name": "Payment Confirmation Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "payment-confirmation-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equal",
+              "value2": "success"
+            }
+          ]
+        }
+      },
+      "id": "payment-status-check",
+      "name": "Payment Status Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/payment_transactions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "payment_id",
+              "value": "eq.{{ $json.payment_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"payment_status\": \"completed\",\n  \"utr_number\": \"{{ $json.utr_number }}\",\n  \"payment_date\": \"{{ $json.payment_date || new Date().toISOString() }}\",\n  \"gateway_response\": {{ JSON.stringify($json) }}\n}",
+        "httpMethod": "PATCH"
+      },
+      "id": "update-payment-success",
+      "name": "Update Payment Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/allocation_table",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "indent_number",
+              "value": "eq.{{ $json.indent_number }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"status\": \"Payment Completed\",\n  \"updated_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "httpMethod": "PATCH"
+      },
+      "id": "update-allocation-status",
+      "name": "Update Allocation Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/emd_details",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "indent_number",
+              "value": "eq.{{ $json.indent_number }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"emd_status\": \"received\",\n  \"updated_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "httpMethod": "PATCH"
+      },
+      "id": "update-emd-status",
+      "name": "Update EMD Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "{{ $env.SYSTEM_EMAIL }}",
+        "toEmail": "{{ $json.customer_email }}",
+        "subject": "Payment Confirmation - {{ $json.indent_number }}",
+        "text": "Dear Customer,\\n\\nYour payment has been successfully processed.\\n\\nPayment Details:\\n- Payment ID: {{ $json.payment_id }}\\n- Amount: ₹{{ $json.amount }}\\n- UTR Number: {{ $json.utr_number }}\\n- Indent Number: {{ $json.indent_number }}\\n\\nThank you for your business.\\n\\nBest regards,\\nCotton Trading Team"
+      },
+      "id": "send-confirmation-email",
+      "name": "Send Confirmation Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1340, 200],
+      "credentials": {
+        "smtp": {
+          "id": "system-email-smtp",
+          "name": "System Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/payment_transactions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "payment_id",
+              "value": "eq.{{ $json.payment_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"payment_status\": \"failed\",\n  \"failure_reason\": \"{{ $json.failure_reason || 'Payment failed' }}\",\n  \"gateway_response\": {{ JSON.stringify($json) }}\n}",
+        "httpMethod": "PATCH"
+      },
+      "id": "update-payment-failed",
+      "name": "Update Payment Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/payment_reminders",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"payment_id\": \"{{ $json.payment_id }}\",\n  \"indent_number\": \"{{ $json.indent_number }}\",\n  \"reminder_type\": \"payment_failed\",\n  \"reminder_count\": 1,\n  \"next_reminder_at\": \"{{ new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }}\"\n}"
+      },
+      "id": "schedule-reminder",
+      "name": "Schedule Payment Reminder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "{{ $env.SYSTEM_EMAIL }}",
+        "toEmail": "{{ $json.customer_email }}",
+        "subject": "Payment Failed - Action Required - {{ $json.indent_number }}",
+        "text": "Dear Customer,\\n\\nWe regret to inform you that your payment could not be processed.\\n\\nPayment Details:\\n- Payment ID: {{ $json.payment_id }}\\n- Amount: ₹{{ $json.amount }}\\n- Indent Number: {{ $json.indent_number }}\\n- Failure Reason: {{ $json.failure_reason }}\\n\\nPlease retry the payment or contact our support team.\\n\\nBest regards,\\nCotton Trading Team"
+      },
+      "id": "send-failure-notification",
+      "name": "Send Failure Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1120, 400],
+      "credentials": {
+        "smtp": {
+          "id": "system-email-smtp",
+          "name": "System Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Payment confirmation processed successfully\",\n  \"payment_id\": \"{{ $json.payment_id }}\"\n}"
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": false,\n  \"message\": \"Payment failure processed\",\n  \"payment_id\": \"{{ $json.payment_id }}\"\n}"
+      },
+      "id": "failure-response",
+      "name": "Failure Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 400]
+    }
+  ],
+  "connections": {
+    "Payment Confirmation Webhook": {
+      "main": [
+        [
+          {
+            "node": "Payment Status Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payment Status Check": {
+      "main": [
+        [
+          {
+            "node": "Update Payment Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Payment Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Payment Success": {
+      "main": [
+        [
+          {
+            "node": "Update Allocation Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Allocation Status": {
+      "main": [
+        [
+          {
+            "node": "Update EMD Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update EMD Status": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Confirmation Email": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Payment Failed": {
+      "main": [
+        [
+          {
+            "node": "Schedule Payment Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Payment Reminder": {
+      "main": [
+        [
+          {
+            "node": "Send Failure Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Failure Notification": {
+      "main": [
+        [
+          {
+            "node": "Failure Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "payment-confirmation",
+      "name": "payment-confirmation"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

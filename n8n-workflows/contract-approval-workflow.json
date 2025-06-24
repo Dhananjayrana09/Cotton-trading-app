@@ -1,0 +1,300 @@
+{
+  "name": "Contract Approval and Email Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "contract-approval",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "approval-webhook",
+      "name": "Contract Approval Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "contract-approval-webhook"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/procurement_table",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "indent_number",
+              "value": "eq.{{ $json.indent_number }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-procurement-details",
+      "name": "Fetch Procurement Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/branch_information",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "branch_name",
+              "value": "eq.{{ $node['Fetch Procurement Details'].json[0].branch }}"
+            }
+          ]
+        }
+      },
+      "id": "lookup-branch-email",
+      "name": "Lookup Branch Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "{{ $env.SYSTEM_EMAIL }}",
+        "toEmail": "{{ $node['Lookup Branch Email'].json[0].branch_email_id }}",
+        "ccEmail": "{{ $env.ADMIN_EMAIL }}",
+        "subject": "Purchase Contract - {{ $json.indent_number }} - {{ $json.firm_name }}",
+        "text": "Dear {{ $node['Lookup Branch Email'].json[0].contact_person }},\n\nPlease find attached the approved purchase contract for the following procurement:\n\nIndent Number: {{ $json.indent_number }}\nFirm Name: {{ $json.firm_name }}\nBuyer: {{ $node['Fetch Procurement Details'].json[0].buyer_name }}\nVariety: {{ $node['Fetch Procurement Details'].json[0].variety }}\nQuantity: {{ $node['Fetch Procurement Details'].json[0].bales_quantity }} bales\nOffer Price: ₹{{ $node['Fetch Procurement Details'].json[0].offer_price }}\n\nAdmin Notes: {{ $json.admin_notes || 'No additional notes' }}\n\nPlease process this contract as per your standard procedures.\n\nContract Document: {{ $json.contract_url }}\n\nBest regards,\nCotton Trading System",
+        "html": "<h2>Purchase Contract Approval</h2>\n<p>Dear {{ $node['Lookup Branch Email'].json[0].contact_person }},</p>\n\n<p>Please find attached the approved purchase contract for the following procurement:</p>\n\n<table border=\"1\" cellpadding=\"10\" cellspacing=\"0\" style=\"border-collapse: collapse; width: 100%;\">\n<tr><td><strong>Indent Number:</strong></td><td>{{ $json.indent_number }}</td></tr>\n<tr><td><strong>Firm Name:</strong></td><td>{{ $json.firm_name }}</td></tr>\n<tr><td><strong>Buyer:</strong></td><td>{{ $node['Fetch Procurement Details'].json[0].buyer_name }}</td></tr>\n<tr><td><strong>Variety:</strong></td><td>{{ $node['Fetch Procurement Details'].json[0].variety }}</td></tr>\n<tr><td><strong>Quantity:</strong></td><td>{{ $node['Fetch Procurement Details'].json[0].bales_quantity }} bales</td></tr>\n<tr><td><strong>Offer Price:</strong></td><td>₹{{ $node['Fetch Procurement Details'].json[0].offer_price }}</td></tr>\n</table>\n\n<p><strong>Admin Notes:</strong> {{ $json.admin_notes || 'No additional notes' }}</p>\n\n<p>Please process this contract as per your standard procedures.</p>\n\n<p><a href=\"{{ $json.contract_url }}\" style=\"background-color: #3b82f6; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;\">Download Contract Document</a></p>\n\n<p>Best regards,<br>Cotton Trading System</p>",
+        "attachments": [
+          {
+            "name": "{{ $json.firm_name }}_{{ $json.indent_number }}_PurchaseContract.pdf",
+            "url": "{{ $json.contract_url }}"
+          }
+        ]
+      },
+      "id": "send-contract-email",
+      "name": "Send Contract to Branch",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "credentials": {
+        "smtp": {
+          "id": "system-email-smtp",
+          "name": "System Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL }}/api/webhook/contract-approved",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "contract_id",
+              "value": "={{ $json.contract_id }}"
+            },
+            {
+              "name": "indent_number",
+              "value": "={{ $json.indent_number }}"
+            },
+            {
+              "name": "branch_email",
+              "value": "={{ $node['Lookup Branch Email'].json[0].branch_email_id }}"
+            },
+            {
+              "name": "admin_notes",
+              "value": "={{ $json.admin_notes }}"
+            }
+          ]
+        }
+      },
+      "id": "log-approval-action",
+      "name": "Log Approval Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "{{ $env.SYSTEM_EMAIL }}",
+        "toEmail": "{{ $env.ADMIN_EMAIL }}",
+        "subject": "Contract Sent Successfully - {{ $json.indent_number }}",
+        "text": "The approved contract for indent number {{ $json.indent_number }} has been successfully sent to the branch.\n\nDetails:\n- Firm Name: {{ $json.firm_name }}\n- Branch Email: {{ $node['Lookup Branch Email'].json[0].branch_email_id }}\n- Contact Person: {{ $node['Lookup Branch Email'].json[0].contact_person }}\n\nThe contract has been delivered and logged in the audit trail.",
+        "html": "<h2>Contract Delivery Confirmation</h2>\n<p>The approved contract for indent number <strong>{{ $json.indent_number }}</strong> has been successfully sent to the branch.</p>\n\n<h3>Delivery Details:</h3>\n<ul>\n<li><strong>Firm Name:</strong> {{ $json.firm_name }}</li>\n<li><strong>Branch Email:</strong> {{ $node['Lookup Branch Email'].json[0].branch_email_id }}</li>\n<li><strong>Contact Person:</strong> {{ $node['Lookup Branch Email'].json[0].contact_person }}</li>\n</ul>\n\n<p>The contract has been delivered and logged in the audit trail.</p>"
+      },
+      "id": "notify-admin-success",
+      "name": "Notify Admin Success",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1340, 300],
+      "credentials": {
+        "smtp": {
+          "id": "system-email-smtp",
+          "name": "System Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Contract approved and sent to branch successfully\",\n  \"branch_email\": \"{{ $node['Lookup Branch Email'].json[0].branch_email_id }}\"\n}"
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "{{ $env.SYSTEM_EMAIL }}",
+        "toEmail": "{{ $env.ADMIN_EMAIL }}",
+        "subject": "Contract Approval Failed - {{ $json.indent_number }}",
+        "text": "Failed to process contract approval for indent number {{ $json.indent_number }}.\n\nError: {{ $json.error || 'Unknown error occurred' }}\n\nPlease check the system logs and retry the approval process.",
+        "html": "<h2>Contract Approval Failed</h2>\n<p>Failed to process contract approval for indent number <strong>{{ $json.indent_number }}</strong>.</p>\n\n<p><strong>Error:</strong> {{ $json.error || 'Unknown error occurred' }}</p>\n\n<p>Please check the system logs and retry the approval process.</p>"
+      },
+      "id": "notify-admin-error",
+      "name": "Notify Admin Error",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1340, 500],
+      "credentials": {
+        "smtp": {
+          "id": "system-email-smtp",
+          "name": "System Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": false,\n  \"message\": \"Contract approval failed: {{ $json.error || 'Unknown error' }}\"\n}",
+        "responseCode": 500
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 500]
+    }
+  ],
+  "connections": {
+    "Contract Approval Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fetch Procurement Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Procurement Details": {
+      "main": [
+        [
+          {
+            "node": "Lookup Branch Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Branch Email": {
+      "main": [
+        [
+          {
+            "node": "Send Contract to Branch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Contract to Branch": {
+      "main": [
+        [
+          {
+            "node": "Log Approval Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Approval Action": {
+      "main": [
+        [
+          {
+            "node": "Notify Admin Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Admin Success": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": {
+      "errorWorkflowId": "error-workflow"
+    }
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "contract-approval",
+      "name": "contract-approval"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}
