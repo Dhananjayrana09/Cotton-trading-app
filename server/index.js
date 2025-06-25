@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import paymentRoutes from './paymentRoutes.js';
 import contractRoutes from './contractRoutes.js';
 import samplingRoutes from './samplingRoutes.js';
+import orderRoutes from './orderRoutes.js';
 
 dotenv.config();
 
@@ -25,6 +26,7 @@ const supabase = createClient(
 app.use('/api/payment', paymentRoutes);
 app.use('/api/contract', contractRoutes);
 app.use('/api/sampling', samplingRoutes);
+app.use('/api/orders', orderRoutes);
 
 // Email processing webhook - this would be called by n8n
 app.post('/api/webhook/email-received', async (req, res) => {
