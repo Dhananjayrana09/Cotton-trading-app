@@ -53,8 +53,8 @@ const CottonDataTable: React.FC<CottonDataTableProps> = ({ data, onEdit, onView 
   };
 
   const sortedData = [...data].sort((a, b) => {
-    const aValue = a[sortField];
-    const bValue = b[sortField];
+    const aValue = a[sortField] ?? '';
+    const bValue = b[sortField] ?? '';
     
     if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
     if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
