@@ -6,6 +6,7 @@ import paymentRoutes from './paymentRoutes.js';
 import contractRoutes from './contractRoutes.js';
 import samplingRoutes from './samplingRoutes.js';
 import orderRoutes from './orderRoutes.js';
+import salesRoutes from './salesRoutes.js';
 
 dotenv.config();
 
@@ -27,6 +28,7 @@ app.use('/api/payment', paymentRoutes);
 app.use('/api/contract', contractRoutes);
 app.use('/api/sampling', samplingRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/sales', salesRoutes);
 
 // Email processing webhook - this would be called by n8n
 app.post('/api/webhook/email-received', async (req, res) => {

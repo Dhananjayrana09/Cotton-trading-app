@@ -12,7 +12,8 @@ import {
   Upload,
   Shield,
   Package,
-  ShoppingCart
+  ShoppingCart,
+  TrendingUp
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -25,6 +26,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigation = [
     { name: 'Dashboard', href: '/', icon: BarChart3 },
     { name: 'Customer Orders', href: '/orders', icon: ShoppingCart },
+    { name: 'Sales Management', href: '/sales', icon: TrendingUp },
     { name: 'Email Logs', href: '/emails', icon: Mail },
     { name: 'Cotton Data', href: '/cotton-data', icon: Database },
     { name: 'Payments', href: '/payments', icon: CreditCard },

@@ -8,6 +8,7 @@ import PaymentDashboard from './pages/PaymentDashboard';
 import ContractManagement from './pages/ContractManagement';
 import SamplingEntry from './pages/SamplingEntry';
 import CustomerOrders from './pages/CustomerOrders';
+import SalesManagement from './pages/SalesManagement';
 import AdminContractDashboard from './components/AdminContractDashboard';
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
           <Route path="/contracts" element={<ContractManagement />} />
           <Route path="/sampling" element={<SamplingEntry />} />
           <Route path="/orders" element={<CustomerOrders />} />
+          <Route path="/sales" element={<SalesManagement />} />
           <Route path="/admin/contracts" element={<AdminContractDashboard />} />
           <Route path="/logs" element={<div className="p-8 text-center text-gray-500">Processing Logs - Coming Soon</div>} />
           <Route path="/review" element={<div className="p-8 text-center text-gray-500">Manual Review - Coming Soon</div>} />

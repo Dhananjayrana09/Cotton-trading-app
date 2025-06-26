@@ -1,0 +1,624 @@
+{
+  "name": "Sales Confirmation Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sales-confirmation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "sales-confirmation-webhook",
+      "name": "Sales Confirmation Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "sales-confirmation-webhook"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/sales_table",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "eq.{{ $json.sales_id }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-sales-order",
+      "name": "Fetch Sales Order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.length > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-order-exists",
+      "name": "Check Order Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/inventory_table",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "lot_number",
+              "value": "in.({{ $node['Fetch Sales Order'].json[0].allocated_lots.join(',') }})"
+            },
+            {
+              "name": "status",
+              "value": "eq.Available"
+            }
+          ]
+        }
+      },
+      "id": "check-lot-availability",
+      "name": "Check Lot Availability",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.length === $node['Fetch Sales Order'].json[0].allocated_lots.length }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "verify-availability",
+      "name": "Verify Availability",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Calculate distributor commission\nconst salesOrder = $node['Fetch Sales Order'].json[0];\nconst totalAmount = salesOrder.total_amount || 0;\nconst commissionRate = salesOrder.broker_commission || 0;\nconst commissionAmount = (totalAmount * commissionRate) / 100;\n\n// Calculate period-wise commission (monthly)\nconst currentDate = new Date();\nconst period = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;\n\nreturn {\n  sales_id: salesOrder.id,\n  broker_id: salesOrder.broker_contact?.broker_id,\n  commission_amount: commissionAmount,\n  commission_rate: commissionRate,\n  total_amount: totalAmount,\n  period: period,\n  calculation_date: currentDate.toISOString()\n};"
+      },
+      "id": "calculate-commission",
+      "name": "Calculate Distributor Commission",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1340, 120]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/inventory_table",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "lot_number",
+              "value": "in.({{ $node['Fetch Sales Order'].json[0].allocated_lots.join(',') }})"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"status\": \"Blocked\",\n  \"updated_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "httpMethod": "PATCH"
+      },
+      "id": "block-lots",
+      "name": "Block Allocated Lots",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 240]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/sales_table",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "eq.{{ $node['Fetch Sales Order'].json[0].id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"status\": \"completed\",\n  \"confirmed_by\": \"{{ $node['Sales Confirmation Webhook'].json.confirmed_by }}\",\n  \"confirmed_at\": \"{{ new Date().toISOString() }}\",\n  \"admin_notes\": \"{{ $node['Sales Confirmation Webhook'].json.admin_notes }}\"\n}",
+        "httpMethod": "PATCH"
+      },
+      "id": "update-sales-status",
+      "name": "Update Sales Status to Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL }}/api/contracts/generate-draft",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"sales_order\": {{ JSON.stringify($node['Fetch Sales Order'].json[0]) }},\n  \"contract_type\": \"draft\",\n  \"allocated_lots\": {{ JSON.stringify($node['Check Lot Availability'].json) }}\n}"
+      },
+      "id": "generate-draft-contract",
+      "name": "Generate Draft Contract PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1780, 120]
+    },
+    {
+      "parameters": {
+        "authentication": "accessKey",
+        "resource": "file",
+        "operation": "upload",
+        "bucketName": "={{ $env.AWS_S3_BUCKET }}",
+        "fileName": "contracts/draft/{{ $node['Fetch Sales Order'].json[0].indent_number }}_draft_contract.pdf",
+        "isBinaryData": true,
+        "binaryDataContent": "={{ $node['Generate Draft Contract PDF'].json.pdf_data }}",
+        "additionalFields": {
+          "contentType": "application/pdf",
+          "serverSideEncryption": "AES256",
+          "metadata": {
+            "sales_id": "={{ $node['Fetch Sales Order'].json[0].id }}",
+            "indent_number": "={{ $node['Fetch Sales Order'].json[0].indent_number }}",
+            "contract_type": "draft"
+          }
+        }
+      },
+      "id": "upload-draft-to-s3",
+      "name": "Upload Draft to S3",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 1,
+      "position": [2000, 120],
+      "credentials": {
+        "aws": {
+          "id": "aws-credentials",
+          "name": "AWS S3 Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/sales_table",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "eq.{{ $node['Fetch Sales Order'].json[0].id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"draft_contract_url\": \"{{ $node['Upload Draft to S3'].json.Location }}\"\n}",
+        "httpMethod": "PATCH"
+      },
+      "id": "link-draft-contract",
+      "name": "Link Draft Contract to Sales",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2220, 120]
+    },
+    {
+      "parameters": {
+        "fromEmail": "{{ $env.SYSTEM_EMAIL }}",
+        "toEmail": "{{ $node['Fetch Sales Order'].json[0].customer_contact.customer_email }}",
+        "ccEmail": "{{ $node['Fetch Sales Order'].json[0].broker_contact.broker_email }}",
+        "subject": "Lot Blocking Confirmation - {{ $node['Fetch Sales Order'].json[0].indent_number }}",
+        "text": "Dear {{ $node['Fetch Sales Order'].json[0].customer_contact.customer_name }},\\n\\nYour cotton lots have been successfully blocked for your order.\\n\\nOrder Details:\\n- Indent Number: {{ $node['Fetch Sales Order'].json[0].indent_number }}\\n- Quantity: {{ $node['Fetch Sales Order'].json[0].bales_quantity }} bales\\n- Total Amount: ₹{{ $node['Fetch Sales Order'].json[0].total_amount }}\\n\\nBlocked Lots: {{ $node['Fetch Sales Order'].json[0].allocated_lots.join(', ') }}\\n\\nDraft contract is being prepared and will be sent shortly.\\n\\nBest regards,\\nCotton Trading Team",
+        "html": "<h2>Lot Blocking Confirmation</h2>\\n<p>Dear {{ $node['Fetch Sales Order'].json[0].customer_contact.customer_name }},</p>\\n\\n<p>Your cotton lots have been successfully blocked for your order.</p>\\n\\n<h3>Order Details:</h3>\\n<ul>\\n<li><strong>Indent Number:</strong> {{ $node['Fetch Sales Order'].json[0].indent_number }}</li>\\n<li><strong>Quantity:</strong> {{ $node['Fetch Sales Order'].json[0].bales_quantity }} bales</li>\\n<li><strong>Total Amount:</strong> ₹{{ $node['Fetch Sales Order'].json[0].total_amount }}</li>\\n</ul>\\n\\n<h3>Blocked Lots:</h3>\\n<p>{{ $node['Fetch Sales Order'].json[0].allocated_lots.join(', ') }}</p>\\n\\n<p>Draft contract is being prepared and will be sent shortly.</p>\\n\\n<p>Best regards,<br>Cotton Trading Team</p>"
+      },
+      "id": "send-blocking-email",
+      "name": "Send Blocking Confirmation Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1780, 280],
+      "credentials": {
+        "smtp": {
+          "id": "system-email-smtp",
+          "name": "System Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL }}/api/contracts/generate-final",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"sales_order\": {{ JSON.stringify($node['Update Sales Status to Completed'].json[0]) }},\n  \"contract_type\": \"final\",\n  \"commission_details\": {{ JSON.stringify($node['Calculate Distributor Commission'].json) }}\n}"
+      },
+      "id": "generate-final-contract",
+      "name": "Generate Final Contract PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2440, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "{{ $env.SYSTEM_EMAIL }}",
+        "toEmail": "{{ $node['Fetch Sales Order'].json[0].customer_contact.customer_email }}",
+        "ccEmail": "{{ $node['Fetch Sales Order'].json[0].broker_contact.broker_email }}",
+        "subject": "Final Sales Contract - {{ $node['Fetch Sales Order'].json[0].indent_number }}",
+        "text": "Dear {{ $node['Fetch Sales Order'].json[0].customer_contact.customer_name }},\\n\\nPlease find attached your final sales contract.\\n\\nOrder Details:\\n- Indent Number: {{ $node['Fetch Sales Order'].json[0].indent_number }}\\n- Quantity: {{ $node['Fetch Sales Order'].json[0].bales_quantity }} bales\\n- Total Amount: ₹{{ $node['Fetch Sales Order'].json[0].total_amount }}\\n\\nThank you for your business.\\n\\nBest regards,\\nCotton Trading Team",
+        "html": "<h2>Final Sales Contract</h2>\\n<p>Dear {{ $node['Fetch Sales Order'].json[0].customer_contact.customer_name }},</p>\\n\\n<p>Please find attached your final sales contract.</p>\\n\\n<h3>Order Details:</h3>\\n<ul>\\n<li><strong>Indent Number:</strong> {{ $node['Fetch Sales Order'].json[0].indent_number }}</li>\\n<li><strong>Quantity:</strong> {{ $node['Fetch Sales Order'].json[0].bales_quantity }} bales</li>\\n<li><strong>Total Amount:</strong> ₹{{ $node['Fetch Sales Order'].json[0].total_amount }}</li>\\n</ul>\\n\\n<p>Thank you for your business.</p>\\n\\n<p>Best regards,<br>Cotton Trading Team</p>",
+        "attachments": [
+          {
+            "name": "{{ $node['Fetch Sales Order'].json[0].indent_number }}_final_contract.pdf",
+            "url": "{{ $node['Generate Final Contract PDF'].json.contract_url }}"
+          }
+        ]
+      },
+      "id": "email-final-contract",
+      "name": "Email Final Contract",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [2660, 200],
+      "credentials": {
+        "smtp": {
+          "id": "system-email-smtp",
+          "name": "System Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/audit_logs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\n  \"action\": \"Sales Confirmed\",\n  \"entity_id\": \"{{ $node['Fetch Sales Order'].json[0].id }}\",\n  \"entity_type\": \"sales_order\",\n  \"user_id\": \"{{ $node['Sales Confirmation Webhook'].json.confirmed_by }}\",\n  \"details\": {\n    \"indent_number\": \"{{ $node['Fetch Sales Order'].json[0].indent_number }}\",\n    \"total_amount\": {{ $node['Fetch Sales Order'].json[0].total_amount }},\n    \"allocated_lots\": {{ JSON.stringify($node['Fetch Sales Order'].json[0].allocated_lots) }},\n    \"commission_amount\": {{ $node['Calculate Distributor Commission'].json.commission_amount }},\n    \"draft_contract_url\": \"{{ $node['Upload Draft to S3'].json.Location }}\",\n    \"final_contract_url\": \"{{ $node['Generate Final Contract PDF'].json.contract_url }}\"\n  },\n  \"indent_number\": \"{{ $node['Fetch Sales Order'].json[0].indent_number }}\",\n  \"status\": \"completed\"\n}"
+      },
+      "id": "log-sales-action",
+      "name": "Log Sales Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2880, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Sales order confirmed successfully\",\n  \"sales_id\": \"{{ $node['Fetch Sales Order'].json[0].id }}\",\n  \"draft_contract_url\": \"{{ $node['Upload Draft to S3'].json.Location }}\",\n  \"final_contract_url\": \"{{ $node['Generate Final Contract PDF'].json.contract_url }}\"\n}"
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [3100, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": false,\n  \"message\": \"Sales order not found\"\n}",
+        "responseCode": 404
+      },
+      "id": "order-not-found-response",
+      "name": "Order Not Found Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": false,\n  \"message\": \"Some allocated lots are no longer available\"\n}",
+        "responseCode": 400
+      },
+      "id": "lots-unavailable-response",
+      "name": "Lots Unavailable Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 400]
+    }
+  ],
+  "connections": {
+    "Sales Confirmation Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fetch Sales Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Sales Order": {
+      "main": [
+        [
+          {
+            "node": "Check Order Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Order Exists": {
+      "main": [
+        [
+          {
+            "node": "Check Lot Availability",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Order Not Found Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Lot Availability": {
+      "main": [
+        [
+          {
+            "node": "Verify Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Availability": {
+      "main": [
+        [
+          {
+            "node": "Calculate Distributor Commission",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Block Allocated Lots",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lots Unavailable Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Distributor Commission": {
+      "main": [
+        [
+          {
+            "node": "Generate Draft Contract PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Block Allocated Lots": {
+      "main": [
+        [
+          {
+            "node": "Update Sales Status to Completed",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Blocking Confirmation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Sales Status to Completed": {
+      "main": [
+        [
+          {
+            "node": "Generate Final Contract PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Draft Contract PDF": {
+      "main": [
+        [
+          {
+            "node": "Upload Draft to S3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Draft to S3": {
+      "main": [
+        [
+          {
+            "node": "Link Draft Contract to Sales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Final Contract PDF": {
+      "main": [
+        [
+          {
+            "node": "Email Final Contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Final Contract": {
+      "main": [
+        [
+          {
+            "node": "Log Sales Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Sales Action": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "sales-confirmation",
+      "name": "sales-confirmation"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}
