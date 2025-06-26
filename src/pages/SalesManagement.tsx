@@ -44,7 +44,7 @@ const SalesManagement: React.FC = () => {
           title="Active Customers"
           value="89"
           icon={Users}
-          color="purple"
+          color="red"
           trend={{ value: 5, label: 'vs last month' }}
         />
       </div>

@@ -54,7 +54,7 @@ export class SalesAPI {
           sales_id: data.id,
           lot_number: lotNumber,
           indent_number: orderData.indent_number,
-          allocated_quantity: Math.floor((orderData.bales_quantity || 0) / orderData.allocated_lots.length),
+          allocated_quantity: Math.floor((orderData.bales_quantity || 0) / orderData.allocated_lots!.length),
           status: 'allocated'
         }));
 
@@ -188,8 +188,8 @@ export class SalesAPI {
     const { error } = await supabase
       .from('broker_jobs')
       .update({
-        total_sales: supabase.raw('total_sales + ?', [salesAmount]),
-        total_commission: supabase.raw('total_commission + ?', [commissionAmount])
+        total_sales: { increment: salesAmount },
+        total_commission: { increment: commissionAmount }
       })
       .eq('broker_id', brokerId);
 
