@@ -1,0 +1,403 @@
+{
+  "name": "Cotton Trading Email Processing",
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "nodeCredentialType": "httpHeaderAuth",
+        "httpMethod": "GET",
+        "url": "=https://{{ $env.N8N_BASE_URL }}/api/v1/emails",
+        "options": {}
+      },
+      "id": "email-trigger",
+      "name": "Email Trigger",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [240, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "email-credentials",
+          "name": "Email API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "subject-filter",
+              "leftValue": "={{ $json.subject }}",
+              "rightValue": "Sale Confirmation of FP Bales",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "sender-filter",
+              "leftValue": "={{ $json.from }}",
+              "rightValue": "sgid@icf.gov.in",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "email-filter",
+      "name": "Filter Emails",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-pdf",
+              "leftValue": "={{ $json.attachments.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "pdf-check",
+      "name": "Has PDF Attachment?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "nodeCredentialType": "httpHeaderAuth",
+        "httpMethod": "POST",
+        "url": "=https://{{ $env.BACKEND_URL }}/api/webhook/email-received",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "subject",
+              "value": "={{ $json.subject }}"
+            },
+            {
+              "name": "sender",
+              "value": "={{ $json.from }}"
+            },
+            {
+              "name": "receivedAt",
+              "value": "={{ $json.date }}"
+            },
+            {
+              "name": "hasPdf",
+              "value": "={{ $json.attachments.length > 0 }}"
+            },
+            {
+              "name": "pdfFilename",
+              "value": "={{ $json.attachments[0].filename }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-email",
+      "name": "Log Email Reception",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "backend-credentials",
+          "name": "Backend API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "nodeCredentialType": "httpHeaderAuth",
+        "httpMethod": "POST",
+        "url": "=https://{{ $env.SUPABASE_URL }}/storage/v1/object/allocation-pdfs",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "file",
+              "value": "={{ $json.attachments[0].content }}"
+            },
+            {
+              "name": "filename",
+              "value": "={{ $json.attachments[0].filename }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "upload-pdf",
+      "name": "Upload PDF to Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "supabase-credentials",
+          "name": "Supabase Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "nodeCredentialType": "httpHeaderAuth",
+        "httpMethod": "POST",
+        "url": "=https://{{ $env.BACKEND_URL }}/api/webhook/pdf-parsed",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "emailLogId",
+              "value": "={{ $('Log Email Reception').item.json.emailLogId }}"
+            },
+            {
+              "name": "pdfUrl",
+              "value": "={{ $('Upload PDF to Supabase').item.json.url }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "process-pdf",
+      "name": "Process PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "backend-credentials",
+          "name": "Backend API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "confidence-check",
+              "leftValue": "={{ $json.parsingConfidence }}",
+              "rightValue": 80,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "confidence-check",
+      "name": "Confidence > 80%?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "nodeCredentialType": "httpHeaderAuth",
+        "httpMethod": "POST",
+        "url": "=https://{{ $env.NOTIFICATION_URL }}/api/notifications",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "type",
+              "value": "success"
+            },
+            {
+              "name": "message",
+              "value": "=Allocation data processed successfully with {{ $json.parsingConfidence }}% confidence"
+            },
+            {
+              "name": "recipient",
+              "value": "admin@cotton-trading.com"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "success-notification",
+      "name": "Success Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1560, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "notification-credentials",
+          "name": "Notification API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "nodeCredentialType": "httpHeaderAuth",
+        "httpMethod": "POST",
+        "url": "=https://{{ $env.NOTIFICATION_URL }}/api/notifications",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "type",
+              "value": "warning"
+            },
+            {
+              "name": "message",
+              "value": "=Low confidence parsing ({{ $json.parsingConfidence }}%) - requires manual review"
+            },
+            {
+              "name": "recipient",
+              "value": "admin@cotton-trading.com"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "warning-notification",
+      "name": "Warning Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1560, 500],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "notification-credentials",
+          "name": "Notification API Credentials"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Email Trigger": {
+      "main": [
+        [
+          {
+            "node": "Filter Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Emails": {
+      "main": [
+        [
+          {
+            "node": "Has PDF Attachment?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has PDF Attachment?": {
+      "main": [
+        [
+          {
+            "node": "Log Email Reception",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload PDF to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload PDF to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Process PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process PDF": {
+      "main": [
+        [
+          {
+            "node": "Confidence > 80%?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confidence > 80%?": {
+      "main": [
+        [
+          {
+            "node": "Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Warning Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+} 

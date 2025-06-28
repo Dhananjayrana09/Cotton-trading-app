@@ -177,6 +177,256 @@ The system extracts the following fields from cotton trading PDFs:
 - `GET /api/processing-logs` - Get detailed processing logs
 - `GET /api/stats` - Get system statistics
 
+## Full API Documentation
+
+### Allocation Workflow
+
+#### `GET /api/allocation`
+- **Description:** Retrieve all allocation records.
+- **Response:**
+```json
+[
+  {
+    "id": 1,
+    "contractId": "C-2024-001",
+    "allocatedTo": "Mill A",
+    "quantity": 100,
+    "date": "2024-06-25"
+  }
+]
+```
+
+#### `POST /api/allocation`
+- **Description:** Create a new allocation.
+- **Request:**
+```json
+{
+  "contractId": "C-2024-001",
+  "allocatedTo": "Mill A",
+  "quantity": 100,
+  "date": "2024-06-25"
+}
+```
+- **Response:**
+```json
+{
+  "success": true,
+  "allocation": { /* ... */ }
+}
+```
+
+---
+
+### Payment Workflow
+
+#### `GET /api/payments`
+- **Description:** List all payments.
+- **Response:**
+```json
+[
+  {
+    "id": 1,
+    "orderId": "O-2024-001",
+    "amount": 50000,
+    "status": "confirmed",
+    "date": "2024-06-25"
+  }
+]
+```
+
+#### `POST /api/payments`
+- **Description:** Record a new payment.
+- **Request:**
+```json
+{
+  "orderId": "O-2024-001",
+  "amount": 50000,
+  "status": "pending",
+  "date": "2024-06-25"
+}
+```
+- **Response:**
+```json
+{
+  "success": true,
+  "payment": { /* ... */ }
+}
+```
+
+---
+
+### Contract Workflow
+
+#### `GET /api/contracts`
+- **Description:** List all contracts.
+- **Response:**
+```json
+[
+  {
+    "id": 1,
+    "buyer": "Mill A",
+    "variety": "Shankar-6",
+    "quantity": 100,
+    "status": "approved"
+  }
+]
+```
+
+#### `POST /api/contracts`
+- **Description:** Upload a new contract.
+- **Request:**
+```json
+{
+  "buyer": "Mill A",
+  "variety": "Shankar-6",
+  "quantity": 100,
+  "status": "pending"
+}
+```
+- **Response:**
+```json
+{
+  "success": true,
+  "contract": { /* ... */ }
+}
+```
+
+#### `PUT /api/contracts/:id/approve`
+- **Description:** Approve a contract.
+- **Response:**
+```json
+{
+  "success": true,
+  "contract": { /* ... */ }
+}
+```
+
+---
+
+### Sampling/Inventory Workflow
+
+#### `GET /api/sampling`
+- **Description:** List all sampling lots.
+- **Response:**
+```json
+[
+  {
+    "id": 1,
+    "lotNumber": "LOT-001",
+    "variety": "Shankar-6",
+    "quantity": 50,
+    "dateSampled": "2024-06-25"
+  }
+]
+```
+
+#### `POST /api/sampling`
+- **Description:** Add a new sampling lot.
+- **Request:**
+```json
+{
+  "lotNumber": "LOT-001",
+  "variety": "Shankar-6",
+  "quantity": 50,
+  "dateSampled": "2024-06-25"
+}
+```
+- **Response:**
+```json
+{
+  "success": true,
+  "sampling": { /* ... */ }
+}
+```
+
+---
+
+### Customer Order/Payment/Invoice Workflow
+
+#### `GET /api/orders`
+- **Description:** List all customer orders.
+- **Response:**
+```json
+[
+  {
+    "id": 1,
+    "customer": "Trader B",
+    "variety": "Bt Cotton",
+    "quantity": 200,
+    "status": "confirmed"
+  }
+]
+```
+
+#### `POST /api/orders`
+- **Description:** Create a new customer order.
+- **Request:**
+```json
+{
+  "customer": "Trader B",
+  "variety": "Bt Cotton",
+  "quantity": 200,
+  "status": "pending"
+}
+```
+- **Response:**
+```json
+{
+  "success": true,
+  "order": { /* ... */ }
+}
+```
+
+---
+
+### Sales/Contract Generation Workflow
+
+#### `GET /api/sales`
+- **Description:** List all sales records.
+- **Response:**
+```json
+[
+  {
+    "id": 1,
+    "orderId": "O-2024-001",
+    "amount": 100000,
+    "date": "2024-06-25"
+  }
+]
+```
+
+#### `POST /api/sales`
+- **Description:** Record a new sale.
+- **Request:**
+```json
+{
+  "orderId": "O-2024-001",
+  "amount": 100000,
+  "date": "2024-06-25"
+}
+```
+- **Response:**
+```json
+{
+  "success": true,
+  "sale": { /* ... */ }
+}
+```
+
+---
+
+### Common Error Response
+```json
+{
+  "success": false,
+  "error": "Error message here."
+}
+```
+
+---
+
+For more details on request/response fields, see the respective router files in `/backend/routes/`.
+
 ## Monitoring and Logging
 
 The system provides comprehensive monitoring:
@@ -213,3 +463,94 @@ For issues and questions:
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Recent Fixes
+
+### Cost Calculation Button Fix (Latest)
+
+The cost calculation button on the payment dashboard has been fixed and enhanced with the following improvements:
+
+1. **Added proper click handler** - The button now opens a comprehensive cost calculation form
+2. **Created CostCalculationForm component** - A new modal form for entering calculation details
+3. **Added missing backend endpoints**:
+   - `/api/payment/zone-tax-rates` - Get all zone tax rates
+   - `/api/payment/zone-tax-rates/:zone` - Get tax rate for specific zone
+   - `/api/payment/cost-calculations` (POST) - Create new cost calculation
+4. **Updated database schema** - Added `zone_tax_rates` table and updated `cost_calculations` table
+
+#### Database Updates Required
+
+Run the following SQL script in your Supabase dashboard to update the database schema:
+
+```sql
+-- Add Zone Tax Rates Table
+CREATE TABLE IF NOT EXISTS zone_tax_rates (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    zone VARCHAR(100) NOT NULL UNIQUE,
+    cgst_rate DECIMAL(5,2) DEFAULT 0.00,
+    sgst_rate DECIMAL(5,2) DEFAULT 0.00,
+    igst_rate DECIMAL(5,2) DEFAULT 0.00,
+    additional_tax DECIMAL(5,2) DEFAULT 0.00,
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Insert default zone tax rates
+INSERT INTO zone_tax_rates (zone, cgst_rate, sgst_rate, igst_rate, additional_tax, description) VALUES
+('South', 2.5, 2.5, 5.0, 0.0, 'Southern zone tax rates'),
+('North', 1.5, 1.5, 3.0, 0.0, 'Northern zone tax rates'),
+('East', 2.0, 2.0, 4.0, 0.0, 'Eastern zone tax rates'),
+('West', 2.0, 2.0, 4.0, 0.0, 'Western zone tax rates')
+ON CONFLICT (zone) DO NOTHING;
+
+-- Drop and recreate cost_calculations table with correct schema
+DROP TABLE IF EXISTS cost_calculations CASCADE;
+
+CREATE TABLE IF NOT EXISTS cost_calculations (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    indent_number VARCHAR(255) NOT NULL,
+    base_amount DECIMAL(12,2) NOT NULL,
+    gst_rate DECIMAL(5,2) DEFAULT 0.00,
+    cgst_rate DECIMAL(5,2) DEFAULT 0.00,
+    sgst_rate DECIMAL(5,2) DEFAULT 0.00,
+    igst_rate DECIMAL(5,2) DEFAULT 0.00,
+    cgst_amount DECIMAL(12,2) DEFAULT 0.00,
+    sgst_amount DECIMAL(12,2) DEFAULT 0.00,
+    igst_amount DECIMAL(12,2) DEFAULT 0.00,
+    gst_amount DECIMAL(12,2) DEFAULT 0.00,
+    additional_charges DECIMAL(12,2) DEFAULT 0.00,
+    total_amount DECIMAL(12,2) NOT NULL,
+    zone VARCHAR(100) NOT NULL,
+    is_inter_state BOOLEAN DEFAULT FALSE,
+    calculation_status VARCHAR(50) DEFAULT 'calculated',
+    calculated_by VARCHAR(255),
+    calculation_date DATE DEFAULT CURRENT_DATE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS idx_cost_calculations_indent_number ON cost_calculations(indent_number);
+CREATE INDEX IF NOT EXISTS idx_cost_calculations_zone ON cost_calculations(zone);
+CREATE INDEX IF NOT EXISTS idx_cost_calculations_calculation_date ON cost_calculations(calculation_date);
+CREATE INDEX IF NOT EXISTS idx_cost_calculations_status ON cost_calculations(calculation_status);
+CREATE INDEX IF NOT EXISTS idx_zone_tax_rates_zone ON zone_tax_rates(zone);
+```
+
+#### How to Use
+
+1. **Start the backend server**: `cd backend && npm start`
+2. **Start the frontend server**: `cd frontend && npm run dev`
+3. **Navigate to Payment Dashboard** in the frontend
+4. **Click "Calculate Costs"** button to open the calculation form
+5. **Enter allocation details** (indent number, base amount, zone, etc.)
+6. **Click "Calculate"** to see the breakdown
+7. **Click "Save Calculation"** to store the result
+
+The form now provides:
+- Input validation
+- Real-time tax rate lookup by zone
+- Detailed GST breakdown (CGST, SGST, IGST)
+- Support for inter-state transactions
+- Professional UI with proper error handling
